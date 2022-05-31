@@ -18,7 +18,7 @@ export class AuthService {
     });
     const tokens = await this.getTokens(newUser.id, newUser.email);
     await this.updateRtHash(newUser.id, tokens.refresh_token);
-    return tokens;
+    return { ...tokens };
   }
   async signinLocal({ email, password }: AuthDto) {
     const user = await this.prisma.user.findUnique({
@@ -31,7 +31,7 @@ export class AuthService {
     if (!passwordMatches) throw new ForbiddenException('Invalid credentials');
     const tokens = await this.getTokens(user.id, user.email);
     await this.updateRtHash(user.id, tokens.refresh_token);
-    return tokens;
+    return { ...tokens, id: user.id };
   }
   async logout(userId: number) {
     await this.prisma.user.updateMany({
@@ -46,7 +46,19 @@ export class AuthService {
       },
     });
   }
-  refresh() {}
+  async refresh(userId: number, rt: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+    if (!user) throw new ForbiddenException('Access Denied user');
+    const rtMatches = await verify(user.hashedRt, rt);
+    if (!rtMatches) throw new ForbiddenException('Access Denied not match');
+    const tokens = await this.getTokens(user.id, user.email);
+    await this.updateRtHash(user.id, tokens.refresh_token);
+    return tokens;
+  }
 
   async updateRtHash(userId: number, rt: string) {
     const rtHash = await hash(rt);
@@ -71,7 +83,7 @@ export class AuthService {
         },
         {
           secret: process.env.AT_SECRET,
-          expiresIn: 60 * 60 * 24 * 7,
+          expiresIn: 60 * 15,
         },
       ),
       this.jwtService.signAsync(
@@ -81,7 +93,7 @@ export class AuthService {
         },
         {
           secret: process.env.RT_SECRET,
-          expiresIn: 60 * 15,
+          expiresIn: 60 * 60 * 24 * 7,
         },
       ),
     ]);
